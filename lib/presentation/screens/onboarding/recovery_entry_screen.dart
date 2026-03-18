@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/snipkit_input.dart';
 import '../../widgets/top_bar.dart';
 import '../../widgets/screen_shell.dart';
 
-class RecoveryEntryScreen extends StatefulWidget {
+class RecoveryEntryScreen extends ConsumerStatefulWidget {
   const RecoveryEntryScreen({super.key});
 
   @override
-  State<RecoveryEntryScreen> createState() => _RecoveryEntryScreenState();
+  ConsumerState<RecoveryEntryScreen> createState() =>
+      _RecoveryEntryScreenState();
 }
 
-class _RecoveryEntryScreenState extends State<RecoveryEntryScreen> {
+class _RecoveryEntryScreenState extends ConsumerState<RecoveryEntryScreen> {
   final _controller = TextEditingController();
 
   bool get _canSubmit {
@@ -33,8 +36,20 @@ class _RecoveryEntryScreenState extends State<RecoveryEntryScreen> {
     super.dispose();
   }
 
+  Future<void> _submit() async {
+    final username = ref.read(pendingLoginUsernameProvider);
+    final phrase = _controller.text.trim();
+    final success =
+        await ref.read(authProvider.notifier).signIn(username, phrase);
+    if (success && mounted) {
+      context.go('/home');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
       appBar: SnipkitTopBar(showBack: true, onBack: () => context.pop()),
@@ -51,7 +66,8 @@ class _RecoveryEntryScreenState extends State<RecoveryEntryScreen> {
                 const SizedBox(height: AppSpacing.sm),
                 Text(
                   'Enter your 5 words separated by spaces.',
-                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                  style: AppTextStyles.bodyMedium
+                      .copyWith(color: AppColors.textSecondary),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
                 SnipkitInput(
@@ -61,16 +77,26 @@ class _RecoveryEntryScreenState extends State<RecoveryEntryScreen> {
                   keyboardType: TextInputType.text,
                   textInputAction: TextInputAction.done,
                 ),
+                if (authState.errorMessage != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    authState.errorMessage!,
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.accentDestructive),
+                  ),
+                ],
                 const Expanded(child: SizedBox()),
                 Text(
                   'Lost your code? Your account cannot be recovered.',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.textDisabled),
+                  style: AppTextStyles.caption
+                      .copyWith(color: AppColors.textDisabled),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 SnipkitButton(
-                  label: 'Sign in',
-                  onPressed: _canSubmit ? () => context.go('/home') : null,
-                  isDisabled: !_canSubmit,
+                  label: authState.isLoading ? 'Signing in…' : 'Sign in',
+                  isDisabled: !_canSubmit || authState.isLoading,
+                  onPressed:
+                      _canSubmit && !authState.isLoading ? _submit : null,
                 ),
                 const SizedBox(height: AppSpacing.xxxl),
               ],

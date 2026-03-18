@@ -1,9 +1,15 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../../core/tokens/app_icons.dart';
+import '../../../core/models/app_models.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/contacts_service.dart';
+import '../../../core/services/conversations_service.dart';
+import '../../../core/services/messages_service.dart';
 import '../../widgets/turn_indicator_bar.dart';
 
 // ─── Nickname lookup (mock) ────────────────────────────────────────────────────
@@ -92,16 +98,17 @@ String _mockTime() {
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
-class ConversationScreen extends StatefulWidget {
+class ConversationScreen extends ConsumerStatefulWidget {
   final String username;
 
   const ConversationScreen({super.key, required this.username});
 
   @override
-  State<ConversationScreen> createState() => _ConversationScreenState();
+  ConsumerState<ConversationScreen> createState() =>
+      _ConversationScreenState();
 }
 
-class _ConversationScreenState extends State<ConversationScreen> {
+class _ConversationScreenState extends ConsumerState<ConversationScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
@@ -112,6 +119,9 @@ class _ConversationScreenState extends State<ConversationScreen> {
   bool _isTyping = false;
   Timer? _replyTimer;
 
+  // Real conversation ID (looked up / created in initState)
+  String? _conversationId;
+
   String get _displayName => _resolveDisplayName(widget.username);
   bool get _canSend => _controller.text.trim().isNotEmpty && _myTurn;
 
@@ -119,6 +129,19 @@ class _ConversationScreenState extends State<ConversationScreen> {
   void initState() {
     super.initState();
     _controller.addListener(() => setState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final contacts = ref.read(contactsProvider).value ?? [];
+      final contact = contacts.cast<Contact?>().firstWhere(
+            (c) => c?.username == widget.username,
+            orElse: () => null,
+          );
+      if (contact != null) {
+        final conv = await ref
+            .read(conversationsProvider.notifier)
+            .getOrCreate(contact.contactId);
+        if (mounted) setState(() => _conversationId = conv.id);
+      }
+    });
   }
 
   @override
@@ -156,6 +179,25 @@ class _ConversationScreenState extends State<ConversationScreen> {
       _myTurn = false;
     });
     _scrollToBottom();
+
+    // Fire real message send (fire and forget)
+    if (_conversationId != null) {
+      final uid = ref.read(authProvider).user?.id;
+      final contacts = ref.read(contactsProvider).value ?? [];
+      final contact = contacts.cast<Contact?>().firstWhere(
+            (c) => c?.username == widget.username,
+            orElse: () => null,
+          );
+      if (uid != null && contact != null) {
+        ref.read(messagesProvider(_conversationId!).notifier).sendMessage(
+              conversationId: _conversationId!,
+              content: text,
+              type: 'text',
+              currentUserId: uid,
+              otherUserId: contact.contactId,
+            );
+      }
+    }
 
     // Mock: show typing indicator after 800ms, then reply after 2.5s
     _replyTimer?.cancel();

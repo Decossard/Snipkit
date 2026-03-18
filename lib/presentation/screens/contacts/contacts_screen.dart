@@ -1,66 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../../core/tokens/app_icons.dart';
+import '../../../core/models/app_models.dart';
+import '../../../core/services/contacts_service.dart';
 import '../../widgets/searchable_top_bar.dart';
 import '../../widgets/bottom_search_bar.dart';
 
-// ─── Models ───────────────────────────────────────────────────────────────────
-class _ContactRequest {
-  const _ContactRequest({required this.username});
-  final String username;
-}
-
-class _Contact {
-  _Contact({required this.username, this.nickname});
-  final String username;
-  final String? nickname;
-  String get displayName => nickname ?? username;
-}
-
-const _mockRequests = <_ContactRequest>[
-  _ContactRequest(username: 'oak.river'),
-];
-
-final _mockContacts = <_Contact>[
-  _Contact(username: 'jade.miller', nickname: 'Jade'),
-  _Contact(username: 'marco.ross'),
-  _Contact(username: 'sofia.novak', nickname: 'Sofia'),
-  _Contact(username: 'alex.kim'),
-];
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
-class ContactsScreen extends StatefulWidget {
+class ContactsScreen extends ConsumerStatefulWidget {
   const ContactsScreen({super.key});
 
   @override
-  State<ContactsScreen> createState() => _ContactsScreenState();
+  ConsumerState<ContactsScreen> createState() => _ContactsScreenState();
 }
 
-class _ContactsScreenState extends State<ContactsScreen> {
-  final List<_ContactRequest> _requests = List.from(_mockRequests);
-  final List<_Contact> _contacts = List.from(_mockContacts);
+class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   String _searchQuery = '';
 
-  List<_Contact> get _filteredContacts {
-    if (_searchQuery.isEmpty) return _contacts;
+  List<Contact> _filteredContacts(List<Contact> contacts) {
+    if (_searchQuery.isEmpty) return contacts;
     final q = _searchQuery.toLowerCase();
-    return _contacts
+    return contacts
         .where((c) =>
             c.displayName.toLowerCase().contains(q) ||
             c.username.toLowerCase().contains(q))
         .toList();
   }
 
-  void _acceptRequest(_ContactRequest request) {
+  void _acceptRequest(ContactRequest request) {
     _showNamingSheet(request);
   }
 
-  void _declineRequest(_ContactRequest request) {
-    setState(() => _requests.remove(request));
+  Future<void> _declineRequest(ContactRequest request) async {
+    await ref.read(contactsProvider.notifier).deleteRequest(request.id);
+    await ref.read(contactRequestsProvider.notifier).refresh();
   }
 
-  void _showNamingSheet(_ContactRequest request) {
+  void _showNamingSheet(ContactRequest request) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.backgroundPrimary,
@@ -69,18 +47,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => _NamingSheet(
-        username: request.username,
-        onSave: (nickname) {
-          setState(() {
-            _requests.remove(request);
-            _contacts.insert(
-              0,
-              _Contact(
-                username: request.username,
-                nickname: nickname.isEmpty ? null : nickname,
-              ),
-            );
-          });
+        username: request.fromUsername,
+        onSave: (nickname) async {
+          await ref
+              .read(contactsProvider.notifier)
+              .acceptRequest(request.id);
+          await ref.read(contactRequestsProvider.notifier).refresh();
         },
       ),
     );
@@ -88,10 +60,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasRequests = _requests.isNotEmpty;
-    final hasContacts = _contacts.isNotEmpty;
-    final filtered = _filteredContacts;
-    final isSearching = _searchQuery.isNotEmpty;
+    final contactsAsync = ref.watch(contactsProvider);
+    final requestsAsync = ref.watch(contactRequestsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
@@ -109,46 +79,65 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
           ),
           Expanded(
-            child: (!hasRequests && !hasContacts)
-                ? _EmptyState(onAddContact: () => context.push('/add-contact'))
-                : isSearching
-                    ? filtered.isEmpty
-                        ? _NoResults(query: _searchQuery)
-                        : _contactsListView(filtered)
-                    : ListView(
-                        padding: EdgeInsets.zero,
-                        children: [
-                          if (hasRequests) ...[
-                            _SectionHeader(
-                              label: 'REQUESTS',
-                              count: _requests.length,
-                            ),
-                            ..._requests.map(
-                              (r) => _RequestRow(
-                                request: r,
-                                onAccept: () => _acceptRequest(r),
-                                onDecline: () => _declineRequest(r),
-                              ),
-                            ),
-                            const _SectionDivider(),
-                          ],
-                          if (hasContacts) ...[
-                            const _SectionHeader(label: 'CONTACTS'),
-                            ..._contacts.asMap().entries.map(
-                                  (e) => _ContactRow(
-                                    contact: e.value,
-                                    showDivider: e.key < _contacts.length - 1,
-                                    onTap: () => context.push(
-                                      '/contact/${e.value.username}',
-                                    ),
-                                    onMessage: () => context.push(
-                                      '/conversation/${e.value.username}',
-                                    ),
+            child: contactsAsync.when(
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Text('Error loading contacts',
+                    style: AppTextStyles.bodyLarge
+                        .copyWith(color: AppColors.textSecondary)),
+              ),
+              data: (contacts) {
+                final requests = requestsAsync.value ?? [];
+                final hasRequests = requests.isNotEmpty;
+                final hasContacts = contacts.isNotEmpty;
+                final filtered = _filteredContacts(contacts);
+                final isSearching = _searchQuery.isNotEmpty;
+
+                return (!hasRequests && !hasContacts)
+                    ? _EmptyState(
+                        onAddContact: () => context.push('/add-contact'))
+                    : isSearching
+                        ? filtered.isEmpty
+                            ? _NoResults(query: _searchQuery)
+                            : _contactsListView(filtered)
+                        : ListView(
+                            padding: EdgeInsets.zero,
+                            children: [
+                              if (hasRequests) ...[
+                                _SectionHeader(
+                                  label: 'REQUESTS',
+                                  count: requests.length,
+                                ),
+                                ...requests.map(
+                                  (r) => _RequestRow(
+                                    request: r,
+                                    onAccept: () => _acceptRequest(r),
+                                    onDecline: () => _declineRequest(r),
                                   ),
                                 ),
-                          ],
-                        ],
-                      ),
+                                const _SectionDivider(),
+                              ],
+                              if (hasContacts) ...[
+                                const _SectionHeader(label: 'CONTACTS'),
+                                ...contacts.asMap().entries.map(
+                                      (e) => _ContactRow(
+                                        contact: e.value,
+                                        showDivider:
+                                            e.key < contacts.length - 1,
+                                        onTap: () => context.push(
+                                          '/contact/${e.value.username}',
+                                        ),
+                                        onMessage: () => context.push(
+                                          '/conversation/${e.value.username}',
+                                        ),
+                                      ),
+                                    ),
+                              ],
+                            ],
+                          );
+              },
+            ),
           ),
           BottomSearchBar(
             hint: 'Search contacts',
@@ -159,7 +148,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
     );
   }
 
-  Widget _contactsListView(List<_Contact> contacts) {
+  Widget _contactsListView(List<Contact> contacts) {
     return ListView.builder(
       padding: EdgeInsets.zero,
       itemCount: contacts.length,
@@ -167,7 +156,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
         contact: contacts[i],
         showDivider: i < contacts.length - 1,
         onTap: () => context.push('/contact/${contacts[i].username}'),
-        onMessage: () => context.push('/conversation/${contacts[i].username}'),
+        onMessage: () =>
+            context.push('/conversation/${contacts[i].username}'),
       ),
     );
   }
@@ -380,7 +370,7 @@ class _RequestRow extends StatelessWidget {
     required this.onDecline,
   });
 
-  final _ContactRequest request;
+  final ContactRequest request;
   final VoidCallback onAccept;
   final VoidCallback onDecline;
 
@@ -407,7 +397,7 @@ class _RequestRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  request.username,
+                  request.fromUsername,
                   style: AppTextStyles.bodyLarge.copyWith(
                       color: AppColors.textPrimary, fontWeight: FontWeight.w500),
                 ),
@@ -471,7 +461,7 @@ class _ContactRow extends StatelessWidget {
     required this.onMessage,
   });
 
-  final _Contact contact;
+  final Contact contact;
   final bool showDivider;
   final VoidCallback onTap;
   final VoidCallback onMessage;

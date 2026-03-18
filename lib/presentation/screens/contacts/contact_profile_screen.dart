@@ -1,35 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../../core/tokens/app_icons.dart';
+import '../../../core/models/app_models.dart';
+import '../../../core/services/contacts_service.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/top_bar.dart';
 
-class ContactProfileScreen extends StatefulWidget {
+class ContactProfileScreen extends ConsumerStatefulWidget {
   final String username;
 
   const ContactProfileScreen({super.key, required this.username});
 
   @override
-  State<ContactProfileScreen> createState() => _ContactProfileScreenState();
+  ConsumerState<ContactProfileScreen> createState() =>
+      _ContactProfileScreenState();
 }
 
-class _ContactProfileScreenState extends State<ContactProfileScreen> {
-  // In a real app this comes from state/provider.
-  // For the prototype we derive a mock nickname from the username.
-  late String? _nickname = _mockNickname(widget.username);
+class _ContactProfileScreenState extends ConsumerState<ContactProfileScreen> {
 
-  String? _mockNickname(String username) {
-    const nicknames = {
-      'jade.miller': 'Jade',
-      'sofia.novak': 'Sofia',
-    };
-    return nicknames[username];
-  }
-
-  String get _displayName => _nickname ?? widget.username;
-
-  void _showEditName() {
+  void _showEditName(Contact contact) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.backgroundPrimary,
@@ -38,25 +29,29 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => _EditNameSheet(
-        currentName: _nickname ?? '',
-        username: widget.username,
-        onSave: (name) => setState(() => _nickname = name.isEmpty ? null : name),
+        currentName: contact.nickname ?? '',
+        username: contact.username,
+        onSave: (name) async {
+          await ref
+              .read(contactsProvider.notifier)
+              .setNickname(contact.contactId, name.isEmpty ? null : name);
+        },
       ),
     );
   }
 
-  void _showReport(BuildContext context) {
+  void _showReport(BuildContext context, String username) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.backgroundPrimary,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (_) => _ReportSheet(username: widget.username),
+      builder: (_) => _ReportSheet(username: username),
     );
   }
 
-  void _confirmBlock(BuildContext context) {
+  void _confirmBlock(BuildContext context, String username) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.backgroundPrimary,
@@ -70,7 +65,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Block ${widget.username}?',
+            Text('Block $username?',
                 style: AppTextStyles.headingSmall
                     .copyWith(color: AppColors.textPrimary)),
             const SizedBox(height: AppSpacing.sm),
@@ -100,7 +95,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
     );
   }
 
-  void _confirmRemove(BuildContext context) {
+  void _confirmRemove(BuildContext context, Contact contact) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.backgroundPrimary,
@@ -114,7 +109,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Remove $_displayName?',
+            Text('Remove ${contact.displayName}?',
                 style: AppTextStyles.headingSmall
                     .copyWith(color: AppColors.textPrimary)),
             const SizedBox(height: AppSpacing.sm),
@@ -127,9 +122,12 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
             SnipkitButton(
               label: 'Remove',
               variant: SnipkitButtonVariant.destructive,
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(context).pop();
-                context.go('/home');
+                await ref
+                    .read(contactsProvider.notifier)
+                    .removeContact(contact.contactId);
+                if (context.mounted) context.go('/home');
               },
             ),
             const SizedBox(height: AppSpacing.md),
@@ -146,7 +144,21 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasNickname = _nickname != null;
+    final contactsAsync = ref.watch(contactsProvider);
+    final contact = contactsAsync.value?.cast<Contact?>().firstWhere(
+          (c) => c?.username == widget.username,
+          orElse: () => null,
+        );
+
+    if (contact == null) {
+      return Scaffold(
+        backgroundColor: AppColors.backgroundPrimary,
+        appBar: SnipkitTopBar(showBack: true, onBack: () => context.pop()),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final hasNickname = contact.nickname != null;
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
       appBar: SnipkitTopBar(showBack: true, onBack: () => context.pop()),
@@ -172,7 +184,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
               const SizedBox(height: AppSpacing.lg),
               // Display name (nickname if set)
               Text(
-                _displayName,
+                contact.displayName,
                 style: AppTextStyles.headingLarge
                     .copyWith(color: AppColors.textPrimary),
               ),
@@ -180,7 +192,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
               if (hasNickname) ...[
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  widget.username,
+                  contact.username,
                   style: AppTextStyles.bodyMedium
                       .copyWith(color: AppColors.textSecondary),
                 ),
@@ -192,7 +204,7 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
               _ActionRow(
                 icon: AppIcons.pencilEdit,
                 label: hasNickname ? 'Edit name' : 'Give a name',
-                onTap: _showEditName,
+                onTap: () => _showEditName(contact),
               ),
               const Divider(height: 1, thickness: 1, color: AppColors.borderSubtle),
               const SizedBox(height: AppSpacing.sm),
@@ -200,27 +212,27 @@ class _ContactProfileScreenState extends State<ContactProfileScreen> {
               _ActionRow(
                 icon: AppIcons.warningTriangle,
                 label: 'Report',
-                onTap: () => _showReport(context),
+                onTap: () => _showReport(context, contact.username),
               ),
               // Block
               _ActionRow(
                 icon: AppIcons.block,
                 label: 'Block',
                 destructive: true,
-                onTap: () => _confirmBlock(context),
+                onTap: () => _confirmBlock(context, contact.username),
               ),
               // Remove
               _ActionRow(
                 icon: AppIcons.trashDelete,
                 label: 'Remove contact',
                 destructive: true,
-                onTap: () => _confirmRemove(context),
+                onTap: () => _confirmRemove(context, contact),
               ),
               const Expanded(child: SizedBox()),
               SnipkitButton(
                 label: 'Send Message',
                 onPressed: () =>
-                    context.go('/conversation/${widget.username}'),
+                    context.go('/conversation/${contact.username}'),
               ),
               const SizedBox(height: AppSpacing.xxxl),
             ],

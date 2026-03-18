@@ -1,11 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/tokens/design_tokens.dart';
+import '../../../core/services/auth_service.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/top_bar.dart';
 
-class LockAccountScreen extends StatelessWidget {
+class LockAccountScreen extends ConsumerStatefulWidget {
   const LockAccountScreen({super.key});
+
+  @override
+  ConsumerState<LockAccountScreen> createState() => _LockAccountScreenState();
+}
+
+class _LockAccountScreenState extends ConsumerState<LockAccountScreen> {
+  bool _isLocking = false;
+
+  Future<void> _lock() async {
+    setState(() => _isLocking = true);
+    await ref.read(authProvider.notifier).signOut();
+    if (mounted) context.go('/account-locked');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,13 +62,15 @@ class LockAccountScreen extends StatelessWidget {
               SnipkitButton(
                 label: 'Lock Account',
                 variant: SnipkitButtonVariant.destructive,
-                onPressed: () => context.go('/account-locked'),
+                isLoading: _isLocking,
+                isDisabled: _isLocking,
+                onPressed: _isLocking ? null : _lock,
               ),
               const SizedBox(height: AppSpacing.md),
               SnipkitButton(
                 label: 'Cancel',
                 variant: SnipkitButtonVariant.secondary,
-                onPressed: () => context.pop(),
+                onPressed: _isLocking ? null : () => context.pop(),
               ),
               const SizedBox(height: AppSpacing.xxxl),
             ],

@@ -1,22 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../../core/tokens/app_icons.dart';
+import '../../../core/services/contacts_service.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/top_bar.dart';
 
-class AddContactScreen extends StatefulWidget {
+class AddContactScreen extends ConsumerStatefulWidget {
   const AddContactScreen({super.key});
 
   @override
-  State<AddContactScreen> createState() => _AddContactScreenState();
+  ConsumerState<AddContactScreen> createState() => _AddContactScreenState();
 }
 
-class _AddContactScreenState extends State<AddContactScreen> {
+class _AddContactScreenState extends ConsumerState<AddContactScreen> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _isFocused = false;
   bool _hasAttempted = false; // true after first submit attempt
+  bool _isLoading = false;
   String? _errorText;
 
   // Valid username: lowercase letters, digits, and dots — at least 3 chars
@@ -25,28 +28,24 @@ class _AddContactScreenState extends State<AddContactScreen> {
     return v.length >= 3 && RegExp(r'^[a-z0-9.]+$').hasMatch(v);
   }
 
-  bool get _canSubmit => _formatValid;
+  bool get _canSubmit => _formatValid && !_isLoading;
 
-  // Mock: only known usernames succeed
-  static const _knownUsers = {
-    'jade.miller',
-    'marco.ross',
-    'sofia.novak',
-    'alex.kim',
-    'oak.river',
-    'frost.peak',
-  };
-
-  void _submit() {
+  Future<void> _submit() async {
     setState(() => _hasAttempted = true);
     final value = _controller.text.trim();
     if (!_formatValid) return;
-    if (!_knownUsers.contains(value)) {
-      setState(() => _errorText = 'No user found with that username.');
+    setState(() {
+      _errorText = null;
+      _isLoading = true;
+    });
+    final error = await ref.read(contactsProvider.notifier).sendRequest(value);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (error != null) {
+      setState(() => _errorText = error);
       return;
     }
-    setState(() => _errorText = null);
-    context.push('/name-contact/$value');
+    context.push('/request-sent');
   }
 
   @override
@@ -145,8 +144,9 @@ class _AddContactScreenState extends State<AddContactScreen> {
               const Expanded(child: SizedBox()),
               SnipkitButton(
                 label: 'Send request',
-                onPressed: _submit,
+                onPressed: _canSubmit ? _submit : null,
                 isDisabled: !_canSubmit,
+                isLoading: _isLoading,
               ),
               const SizedBox(height: AppSpacing.xxxl),
             ],

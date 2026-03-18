@@ -1,14 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/screen_shell.dart';
 
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends ConsumerWidget {
   const WelcomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+
+    // Navigate to account-created only on the first appearance of pendingSignup
+    // (guards against firing twice if auth state changes again while it's set)
+    ref.listen(authProvider, (prev, next) {
+      if (prev?.pendingSignup == null && next.pendingSignup != null) {
+        context.push('/account-created');
+      }
+    });
+
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
       body: SafeArea(
@@ -19,7 +31,6 @@ class WelcomeScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: AppSpacing.giant),
-                // ── Value proposition ────────────────────────────
                 Text(
                   'Slow down\nyour messages.',
                   style: AppTextStyles.displayStyle.copyWith(
@@ -36,9 +47,6 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
-                // ── Pin callout ──────────────────────────────────
-                // Introduces the no-password model before the user
-                // hits account creation — progressive disclosure.
                 Text(
                   'No email. No password. No phone number.',
                   style: AppTextStyles.bodyMedium.copyWith(
@@ -46,11 +54,23 @@ class WelcomeScreen extends StatelessWidget {
                     height: 1.5,
                   ),
                 ),
+                if (authState.errorMessage != null) ...[
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    authState.errorMessage!,
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.accentDestructive),
+                  ),
+                ],
                 const Expanded(child: SizedBox()),
-                // ── CTAs ─────────────────────────────────────────
                 SnipkitButton(
-                  label: 'Create my account',
-                  onPressed: () => context.push('/account-created'),
+                  label: authState.isLoading
+                      ? 'Creating account…'
+                      : 'Create my account',
+                  isDisabled: authState.isLoading,
+                  onPressed: authState.isLoading
+                      ? null
+                      : () => ref.read(authProvider.notifier).signUp(),
                 ),
                 const SizedBox(height: AppSpacing.md),
                 GestureDetector(

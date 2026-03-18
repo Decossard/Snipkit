@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/snipkit_input.dart';
 import '../../widgets/top_bar.dart';
 import '../../widgets/screen_shell.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _usernameController = TextEditingController();
+
+  bool get _canContinue => _usernameController.text.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -139,7 +149,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 const Expanded(child: SizedBox()),
                 SnipkitButton(
                   label: 'Continue',
-                  onPressed: () => context.push('/recovery'),
+                  isDisabled: !_canContinue,
+                  onPressed: _canContinue
+                      ? () {
+                          // Store username for the recovery screen
+                          ref
+                              .read(pendingLoginUsernameProvider.notifier)
+                              .state = _usernameController.text.trim();
+                          context.push('/recovery');
+                        }
+                      : null,
                 ),
                 const SizedBox(height: AppSpacing.xxxl),
               ],

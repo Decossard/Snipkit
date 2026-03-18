@@ -1,35 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../../core/tokens/app_icons.dart';
 import '../../widgets/snipkit_button.dart';
 import '../../widgets/screen_shell.dart';
 
-class AccountCreatedScreen extends StatefulWidget {
+class AccountCreatedScreen extends ConsumerStatefulWidget {
   const AccountCreatedScreen({super.key});
 
   @override
-  State<AccountCreatedScreen> createState() => _AccountCreatedScreenState();
+  ConsumerState<AccountCreatedScreen> createState() =>
+      _AccountCreatedScreenState();
 }
 
-class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
+class _AccountCreatedScreenState extends ConsumerState<AccountCreatedScreen> {
   bool _savedCode = false;
   bool _copied = false;
   bool _wordsVisible = false;
 
-  // Generated username — human-readable, pseudonymous
-  final String _username = 'cedar.hayes';
-  final List<String> _recoveryWords = [
-    'maple',
-    'storm',
-    'river',
-    'cloud',
-    'ember'
-  ];
-
-  void _copyAll() {
-    final text = 'Username: $_username\nRecovery: ${_recoveryWords.join(' ')}';
+  void _copyAll(String username, List<String> words) {
+    final text = 'Username: $username\nRecovery: ${words.join(' ')}';
     Clipboard.setData(ClipboardData(text: text));
     setState(() => _copied = true);
     Future.delayed(const Duration(seconds: 2), () {
@@ -39,13 +32,25 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pending = ref.watch(authProvider).pendingSignup;
+
+    // Fallback if we land here without pending data
+    if (pending == null) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF111111),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final username = pending.username;
+    final recoveryWords = pending.recoveryWords;
+
     return Scaffold(
       backgroundColor: const Color(0xFF111111),
       body: SafeArea(
         child: ScreenShell(
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xxl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -78,7 +83,7 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 Text(
-                  _username,
+                  username,
                   style: AppTextStyles.headingLarge.copyWith(
                     color: Colors.white,
                     letterSpacing: -0.3,
@@ -100,9 +105,10 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
                       ),
                     ),
                     const Spacer(),
-                    // Reveal / obscure toggle
                     Semantics(
-                      label: _wordsVisible ? 'Hide recovery code' : 'Show recovery code',
+                      label: _wordsVisible
+                          ? 'Hide recovery code'
+                          : 'Show recovery code',
                       button: true,
                       child: GestureDetector(
                         onTap: () =>
@@ -110,9 +116,7 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
                         child: Row(
                           children: [
                             Icon(
-                              _wordsVisible
-                                  ? AppIcons.eyeOff
-                                  : AppIcons.eye,
+                              _wordsVisible ? AppIcons.eyeOff : AppIcons.eye,
                               size: AppIcons.small,
                               color: const Color(0xFF555555),
                             ),
@@ -138,75 +142,81 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
                       ? Column(
                           key: const ValueKey('visible'),
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children:
-                              _recoveryWords.asMap().entries.map((e) => Padding(
-                                    padding: const EdgeInsets.only(
-                                        bottom: AppSpacing.xs),
-                                    child: Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 20,
-                                          child: Text(
-                                            '${e.key + 1}.',
-                                            style:
-                                                AppTextStyles.bodySmall.copyWith(
-                                              color: const Color(0xFF555555),
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: AppSpacing.sm),
-                                        Text(
-                                          e.value,
+                          children: recoveryWords
+                              .asMap()
+                              .entries
+                              .map(
+                                (e) => Padding(
+                                  padding: const EdgeInsets.only(
+                                      bottom: AppSpacing.xs),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        child: Text(
+                                          '${e.key + 1}.',
                                           style:
-                                              AppTextStyles.bodyLarge.copyWith(
-                                            color: Colors.white,
+                                              AppTextStyles.bodySmall.copyWith(
+                                            color: const Color(0xFF555555),
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
-                                      ],
-                                    ),
-                                  )).toList(),
+                                      ),
+                                      const SizedBox(width: AppSpacing.sm),
+                                      Text(
+                                        e.value,
+                                        style:
+                                            AppTextStyles.bodyLarge.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
                         )
                       : Column(
                           key: const ValueKey('hidden'),
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children:
-                              List.generate(_recoveryWords.length, (i) => Padding(
-                                    padding: const EdgeInsets.only(
-                                        bottom: AppSpacing.xs),
-                                    child: Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 20,
-                                          child: Text(
-                                            '${i + 1}.',
-                                            style:
-                                                AppTextStyles.bodySmall.copyWith(
-                                              color: const Color(0xFF555555),
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: AppSpacing.sm),
-                                        Text(
-                                          '••••••',
-                                          style: AppTextStyles.bodyLarge.copyWith(
-                                            color: const Color(0xFF444444),
-                                            letterSpacing: 2,
-                                          ),
-                                        ),
-                                      ],
+                          children: List.generate(
+                            recoveryWords.length,
+                            (i) => Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: AppSpacing.xs),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 20,
+                                    child: Text(
+                                      '${i + 1}.',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: const Color(0xFF555555),
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
-                                  )),
+                                  ),
+                                  const SizedBox(width: AppSpacing.sm),
+                                  Text(
+                                    '••••••',
+                                    style: AppTextStyles.bodyLarge.copyWith(
+                                      color: const Color(0xFF444444),
+                                      letterSpacing: 2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                 ),
 
                 const SizedBox(height: AppSpacing.lg),
 
-                // Copy all — full-width secondary button
+                // Copy all
                 GestureDetector(
-                  onTap: _copyAll,
+                  onTap: () => _copyAll(username, recoveryWords),
                   child: Container(
                     height: 48,
                     decoration: BoxDecoration(
@@ -283,8 +293,13 @@ class _AccountCreatedScreenState extends State<AccountCreatedScreen> {
                 const SizedBox(height: AppSpacing.lg),
                 SnipkitButton(
                   label: 'Continue',
-                  onPressed: _savedCode ? () => context.go('/home') : null,
                   isDisabled: !_savedCode,
+                  onPressed: _savedCode
+                      ? () {
+                          ref.read(authProvider.notifier).clearPendingSignup();
+                          context.go('/home');
+                        }
+                      : null,
                 ),
                 const SizedBox(height: AppSpacing.xxxl),
               ],
@@ -301,9 +316,6 @@ class _Divider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      color: const Color(0xFF222222),
-    );
+    return Container(height: 1, color: const Color(0xFF222222));
   }
 }

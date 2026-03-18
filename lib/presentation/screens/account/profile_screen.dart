@@ -1,25 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/tokens/design_tokens.dart';
 import '../../../core/tokens/app_icons.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/services/profile_service.dart';
 
-const _mockUsername = 'cedar.hayes';
 const _appVersion = '1.0.0 (1)';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _usernameCopied = false;
   String _autoDelete = 'Off';
 
-  void _copyUsername() async {
-    await Clipboard.setData(const ClipboardData(text: _mockUsername));
+  void _copyUsername(String username) async {
+    await Clipboard.setData(ClipboardData(text: username));
     setState(() => _usernameCopied = true);
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _usernameCopied = false);
@@ -265,9 +267,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: AppSpacing.xxl),
             GestureDetector(
-              onTap: () {
-                Navigator.of(context).pop();
-                context.go('/welcome');
+              onTap: () async {
+                final nav = Navigator.of(context);
+                final router = GoRouter.of(context);
+                nav.pop();
+                await ref.read(authProvider.notifier).signOut();
+                if (mounted) router.go('/welcome');
               },
               child: Container(
                 height: 52,
@@ -350,9 +355,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: AppSpacing.xxl),
             GestureDetector(
-              onTap: () {
+              onTap: () async {
                 Navigator.of(context).pop();
-                context.go('/welcome');
+                await ref.read(authProvider.notifier).deleteAccount();
               },
               child: Container(
                 height: 52,
@@ -397,6 +402,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final username = ref.watch(currentUsernameProvider) ?? '…';
     return Scaffold(
       backgroundColor: AppColors.backgroundPrimary,
       body: Column(
@@ -422,7 +428,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Row(
                     children: [
                       Text(
-                        _mockUsername,
+                        username,
                         style: AppTextStyles.headingMedium.copyWith(
                           color: AppColors.textPrimary,
                           letterSpacing: -0.2,
@@ -430,7 +436,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const Spacer(),
                       GestureDetector(
-                        onTap: _copyUsername,
+                        onTap: () => _copyUsername(username),
                         child: Row(
                           children: [
                             Icon(
